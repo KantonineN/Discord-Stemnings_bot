@@ -1,0 +1,66 @@
+const {Client, GatewayIntentBits } = require('discord.js');
+
+/* dotenv er en pakke, der kan gemme miljøvariabler i en .env-fil, så man kan beskytte 
+følsomme oplysninger som Discord bot token, API-nøgler eller databladresser. */
+require('dotenv').config();
+
+/* Denne kode opretter en ny Discord bot-klient og specificerer, 
+hvilke events botten skal lytte efter ved hjælp af intents. */
+const client = new Client({
+    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
+});
+
+/* Denne kode logger botten ind på Discord ved at bruge en token, 
+der er gemt i miljøvariablen DISCORD_TOKEN. */
+client.login(process.env.DISCORD_TOKEN);
+
+/* Venter på, at ready-eventen udløses, hvilket betyder, at botten er 
+færdig med at logge ind og er klar til brug. Køres én gang. */
+client.once('ready', () => {
+    console.log('spooky er online!');
+});
+
+const spookyStories = [
+    "Du vågner midt om natten og ser en skygge i hjørnet af dit værelse... men du bor alene.",
+    "Din telefon ringer fra et ukendt nummer. En stemme hvisker: 'Jeg kan se dig'.",
+    "Du modtager et gammelt billede af dit hus... taget fra indersiden af dit skab.",
+    "En gammel dukke på loftet begynder at dukke op i forskellige rum uden forklaring.",
+    "Du finder en dør i dit hus, du aldrig har set før. Den knirker, når du åbner den...",
+    "Dit spejlbillede smiler til dig… men du bevægede ikke dine læber.",
+    "Du hører en svag hvisken bag dig… men du er alene i rummet.",
+    "Dit lys flimrer, og i et kort sekund ser du en skikkelse stå i døråbningen.",
+    "Du låser døren og vender dig om… lyden af nøglen, der drejer, høres igen.",
+    "En børnestemme griner fra dit kælderrum… men du har ingen børn.",
+    'Du modtager en sms fra din egen telefon: "Lås døren… NU."',
+    "Du ser en skygge under din seng… den bevæger sig.",
+    "Dit ur viser 03:33 hver gang du kigger på det i nat.",
+    "En gammel musikboks spiller af sig selv på loftet. Du har aldrig set den før.",
+    "Du hører nogen kalde dit navn ude fra mørket… men stemmen lyder præcis som din egen.",
+    "Du vågner ved lyden af skridt i din lejlighed… gulvet knirker under vægten af noget tungt.",
+    'Din computerskærm lyser op af sig selv… en besked skriver: "Luk mig ikke ude."',
+    "Du ser en mand stå uden for dit vindue. Hans ansigt er sløret, men han vinker… og vinker…",
+    "En gammel dagbog i dit skab indeholder beskrivelser af dine præcise bevægelser… fra i går.",
+    "Du mærker en kold ånde i nakken… men der er ingen bag dig.",
+    "Dit kæledyr stirrer intenst på et tomt hjørne og knurrer lavt.",
+    "Du hører en banken bag væggen… men der er ingen rum på den anden side.",
+    'En fremmed på gaden hvisker, da du går forbi: "Du burde ikke være her… endnu."',
+    "Dit loftsrum har altid været låst… i nat står døren på klem.",
+    "Du kigger ud af vinduet og ser dig selv stå udenfor… og smile.",
+    "Du vågner ved lyden af nogen, der trækker vejret tungt ved siden af din seng. Du rækker ud i mørket... og rører ved en iskold hånd.",
+    'Du ligger i sengen og kan ikke bevæge dig. En hviskende stemme tæt ved dit øre siger: "Jeg har ventet så længe på, at du ville vågne".',
+    'Du låser hoveddøren for natten. Lige inden du slukker lyset, hører du en rolig stemme bag dig: "Hvorfor gjorde du det?".',
+    "Du modtager en video på din telefon. Den viser dig selv, sovende i din seng, filmet fra loftet.",
+    "Du hører nogen liste hen over gulvet i din gang. Da du kigger, ser du kun våde fodspor… men gulvet er knastørt."
+];
+
+/* Lytter efter nye beskeder i kanaler, hvor botten har adgang.
+messageCreate-eventen kører, hver gang nogen skriver noget i chatten. */
+client.on('messageCreate', (message) => {
+    if (message.content.toLowerCase() === '!spooky' && !message.author.bot) {
+        /* Genererer et tilfældigt index i spookyStories-arrayet.
+        Metoden Math.floor() afrunder et tal nedad til det nærmeste heltal. */
+        const randomStory = spookyStories[Math.floor(Math.random() * spookyStories.length)];
+        /* Sender den valgte historie tilbage til den kanal, hvor brugeren skrev !spooky. */
+        message.channel.send(randomStory);
+    }
+});
