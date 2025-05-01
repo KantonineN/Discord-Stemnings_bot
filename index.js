@@ -1,4 +1,8 @@
 const {Client, GatewayIntentBits } = require('discord.js');
+const { joinVoiceChannel, createAudioPlayer, createAudioResource } = require('@discordjs/voice');
+const { db, ref, get, child } = require('./firebase');
+const fs = require('fs');
+const path = require('path');
 
 /* dotenv er en pakke, der kan gemme miljøvariabler i en .env-fil, så man kan beskytte 
 følsomme oplysninger som Discord bot token, API-nøgler eller databladresser. */
@@ -7,7 +11,16 @@ require('dotenv').config();
 /* Denne kode opretter en ny Discord bot-klient og specificerer, 
 hvilke events botten skal lytte efter ved hjælp af intents. */
 const client = new Client({
-    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildVoiceStates,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent]
+});
+
+// Logger fejl der ellers ville crashe botten uden besked
+process.on('unhandledRejection', (error) => {
+    console.error('Uventet fejl:', error);
 });
 
 /* Denne kode logger botten ind på Discord ved at bruge en token, 
@@ -20,47 +33,70 @@ client.once('ready', () => {
     console.log('spooky er online!');
 });
 
-const spookyStories = [
-    "Du vågner midt om natten og ser en skygge i hjørnet af dit værelse... men du bor alene.",
-    "Din telefon ringer fra et ukendt nummer. En stemme hvisker: 'Jeg kan se dig'.",
-    "Du modtager et gammelt billede af dit hus... taget fra indersiden af dit skab.",
-    "En gammel dukke på loftet begynder at dukke op i forskellige rum uden forklaring.",
-    "Du finder en dør i dit hus, du aldrig har set før. Den knirker, når du åbner den...",
-    "Dit spejlbillede smiler til dig… men du bevægede ikke dine læber.",
-    "Du hører en svag hvisken bag dig… men du er alene i rummet.",
-    "Dit lys flimrer, og i et kort sekund ser du en skikkelse stå i døråbningen.",
-    "Du låser døren og vender dig om… lyden af nøglen, der drejer, høres igen.",
-    "En børnestemme griner fra dit kælderrum… men du har ingen børn.",
-    'Du modtager en sms fra din egen telefon: "Lås døren… NU."',
-    "Du ser en skygge under din seng… den bevæger sig.",
-    "Dit ur viser 03:33 hver gang du kigger på det i nat.",
-    "En gammel musikboks spiller af sig selv på loftet. Du har aldrig set den før.",
-    "Du hører nogen kalde dit navn ude fra mørket… men stemmen lyder præcis som din egen.",
-    "Du vågner ved lyden af skridt i din lejlighed… gulvet knirker under vægten af noget tungt.",
-    'Din computerskærm lyser op af sig selv… en besked skriver: "Luk mig ikke ude."',
-    "Du ser en mand stå uden for dit vindue. Hans ansigt er sløret, men han vinker… og vinker…",
-    "En gammel dagbog i dit skab indeholder beskrivelser af dine præcise bevægelser… fra i går.",
-    "Du mærker en kold ånde i nakken… men der er ingen bag dig.",
-    "Dit kæledyr stirrer intenst på et tomt hjørne og knurrer lavt.",
-    "Du hører en banken bag væggen… men der er ingen rum på den anden side.",
-    'En fremmed på gaden hvisker, da du går forbi: "Du burde ikke være her… endnu."',
-    "Dit loftsrum har altid været låst… i nat står døren på klem.",
-    "Du kigger ud af vinduet og ser dig selv stå udenfor… og smile.",
-    "Du vågner ved lyden af nogen, der trækker vejret tungt ved siden af din seng. Du rækker ud i mørket... og rører ved en iskold hånd.",
-    'Du ligger i sengen og kan ikke bevæge dig. En hviskende stemme tæt ved dit øre siger: "Jeg har ventet så længe på, at du ville vågne".',
-    'Du låser hoveddøren for natten. Lige inden du slukker lyset, hører du en rolig stemme bag dig: "Hvorfor gjorde du det?".',
-    "Du modtager en video på din telefon. Den viser dig selv, sovende i din seng, filmet fra loftet.",
-    "Du hører nogen liste hen over gulvet i din gang. Da du kigger, ser du kun våde fodspor… men gulvet er knastørt."
-];
-
 /* Lytter efter nye beskeder i kanaler, hvor botten har adgang.
 messageCreate-eventen kører, hver gang nogen skriver noget i chatten. */
 client.on('messageCreate', (message) => {
+    
     if (message.content.toLowerCase() === '!spooky' && !message.author.bot) {
-        /* Genererer et tilfældigt index i spookyStories-arrayet.
-        Metoden Math.floor() afrunder et tal nedad til det nærmeste heltal. */
-        const randomStory = spookyStories[Math.floor(Math.random() * spookyStories.length)];
-        /* Sender den valgte historie tilbage til den kanal, hvor brugeren skrev !spooky. */
-        message.channel.send(randomStory);
+        /* Henter data fra Firebase-databasen. 
+        child() bruges til at navigere til en bestemt del af databasen. */
+        const dbRef = ref(db);
+        get(child (dbRef, 'stories'))
+        .then((snapshot) => {
+            if (snapshot.exists()) {
+                const stories = snapshot.val();
+                /* Genererer et tilfældigt index i spookyStories-arrayet.
+                Metoden Math.floor() afrunder et tal nedad til det nærmeste heltal. */
+                const randomStory = stories[Math.floor(Math.random() * stories.length)];
+                /* Sender den valgte historie tilbage til den kanal, hvor brug
+                brugeren skrev !spooky. */
+                message.channel.send(randomStory);
+            } else {
+                /* Hvis der ikke findes data i den ønskede del af databasen, 
+                sendes en fejlmeddelelse til kanalen. */
+                message.channel.send('Ingen historier fundet.');
+            }
+        })
+        .catch((error) => {
+            /* Hvis der opstår en fejl under hentning af data fra databasen, 
+            sendes en fejlmeddelelse til kanalen. */
+            console.error('Fejl ved hentning fra Firebase:', error);
+            message.channel.send('Der opstod en fejl ved hentning af historier.');
+        });
+    } else if (message.content.toLowerCase() === '!sv' && message.member.voice.channel) {
+        const audioDir = path.join(__dirname, 'audio');
+
+        fs.readdir(audioDir, (err, files) => {
+            if (err) {
+                console.error('Fejl ved læsning af lydmappe:', err);
+                return message.reply('Kunne ikke læse lydfilerne! ❌');
+            }
+
+            const soundFiles = files.filter(file =>
+                file.endsWith('.mp3') || file.endsWith('.ogg') || file.endsWith('.wav')
+            );
+
+            if (soundFiles.length === 0) {
+                return message.reply('Ingen lydfiler fundet i mappen! 🔇');
+            }
+
+            const randomFile = soundFiles[Math.floor(Math.random() * soundFiles.length)];
+            const resource = createAudioResource(path.join(audioDir, randomFile));
+
+            /* Hvis brugeren skriver !spookyvoice og er i en stemmechat, 
+            oprettes der forbindelse til den stemmechat. */
+            const connection = joinVoiceChannel({
+                channelId: message.member.voice.channel.id,
+                guildId: message.guild.id,
+                adapterCreator: message.guild.voiceAdapterCreator,
+            });
+
+            /* Opretter en ny audio player og spiller en tilfældig lyd. */
+            const player = createAudioPlayer();
+            player.play(resource);
+            connection.subscribe(player);
+        });
+    } else if (message.content.toLowerCase() === '!spookyvoice') {
+        message.reply('Du skal være i en voice-kanal for at høre spøgelseslydene! 👻');
     }
 });
