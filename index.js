@@ -63,40 +63,43 @@ client.on('messageCreate', (message) => {
             console.error('Fejl ved hentning fra Firebase:', error);
             message.channel.send('Der opstod en fejl ved hentning af historier.');
         });
-    } else if (message.content.toLowerCase() === '!sv' && message.member.voice.channel) {
-        const audioDir = path.join(__dirname, 'audio');
+    } else if (message.content.toLowerCase() === '!sv') {
+        const voiceChannel = message.member.voice.channel;
+        /* Hvis brugeren skriver !sv, og botten ikke er i en voice-kanal, 
+        sendes en besked tilbage til kanalen. */
+        if (!voiceChannel) {
+            message.reply('Du skal være i en voice-kanal for at høre spøgelseslydene! 👻');
+            return;
+        }
 
-        fs.readdir(audioDir, (err, files) => {
-            if (err) {
-                console.error('Fejl ved læsning af lydmappe:', err);
-                return message.reply('Kunne ikke læse lydfilerne! ❌');
-            }
-
-            const soundFiles = files.filter(file =>
-                file.endsWith('.mp3') || file.endsWith('.ogg') || file.endsWith('.wav')
-            );
-
-            if (soundFiles.length === 0) {
-                return message.reply('Ingen lydfiler fundet i mappen! 🔇');
-            }
-
-            const randomFile = soundFiles[Math.floor(Math.random() * soundFiles.length)];
-            const resource = createAudioResource(path.join(audioDir, randomFile));
-
-            /* Hvis brugeren skriver !spookyvoice og er i en stemmechat, 
-            oprettes der forbindelse til den stemmechat. */
-            const connection = joinVoiceChannel({
-                channelId: message.member.voice.channel.id,
-                guildId: message.guild.id,
-                adapterCreator: message.guild.voiceAdapterCreator,
-            });
-
-            /* Opretter en ny audio player og spiller en tilfældig lyd. */
-            const player = createAudioPlayer();
-            player.play(resource);
-            connection.subscribe(player);
+        // Join voice-kanalen
+        const connection = joinVoiceChannel({
+            channelId: voiceChannel.id,
+            guildId: voiceChannel.guild.id,
+            adapterCreator: voiceChannel.guild.voiceAdapterCreator,
         });
-    } else if (message.content.toLowerCase() === '!spookyvoice') {
-        message.reply('Du skal være i en voice-kanal for at høre spøgelseslydene! 👻');
+
+        // Opret audio player
+        const player = createAudioPlayer();
+        const soundPath = path.join(__dirname, 'audio', 'dark-ambient.mp3');
+
+        if (!fs.existsSync(soundPath)) {
+            message.reply('Lyden kunne ikke findes!');
+            return;
+        }
+
+        const resource = createAudioResource(soundPath);
+        player.play(resource);
+        connection.subscribe(player);
+
+        player.on('idle', () => {
+            connection.destroy();
+        });
+    
+        player.on('error', error => {
+            console.error('Fejl under afspilning:', error);
+            message.channel.send('Der opstod en fejl under afspilning af lyden.');
+            connection.destroy();
+        });
     }
 });
