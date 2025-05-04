@@ -35,91 +35,162 @@ client.once('ready', () => {
     console.log('spooky er online!');
 });
 
+/* Funktion der henter og sender en tilfældig historie fra databasen */
+function sendRandomStory(interaction) {
+    /* Henter data fra Firebase-databasen. 
+    child() bruges til at navigere til en bestemt del af databasen. */
+    const dbRef = ref(db);
+    get(child(dbRef, 'stories'))
+        .then((snapshot) => {
+            if (snapshot.exists()) {
+                const stories = snapshot.val();
+                const randomStory = stories[Math.floor(Math.random() * stories.length)];
+                interaction.reply(randomStory);
+            } else {
+                interaction.reply('Ingen historier fundet.');
+            }
+        })
+        .catch((error) => {
+            /* Hvis der opstår en fejl under hentning af data fra databasen, 
+                sendes en fejlmeddelelse til kanalen. */
+            console.error('Fejl ved hentning fra Firebase:', error);
+            interaction.reply('Der opstod en fejl ved hentning af historier.');
+        });
+}
+
 /* Denne event lytter efter slash commands, 
    og kører hver gang en bruger interagerer med en kommando. */
 client.on('interactionCreate', (interaction) => {
     if (!interaction.isChatInputCommand()) return;
 
 
-    // Hvis brugeren bruger /spooky
+    // 🎃 /spooky – spiller lyd hvis i voice, ellers sender historie
     if (interaction.commandName === 'spooky') {
         const member = interaction.member;
         const voiceChannel = member.voice?.channel;
 
         // Brugeren er IKKE i en voice-kanal → send teksthistorie
         if (!voiceChannel) {
-            /* Henter data fra Firebase-databasen. 
-            child() bruges til at navigere til en bestemt del af databasen. */
-            const dbRef = ref(db);
-            get(child (dbRef, 'stories'))
-            .then((snapshot) => {
-                if (snapshot.exists()) {
-                    const stories = snapshot.val();
-                    /* Genererer et tilfældigt index i spookyStories-arrayet.
-                    Metoden Math.floor() afrunder et tal nedad til det nærmeste heltal. */
-                    const randomStory = stories[Math.floor(Math.random() * stories.length)];
-                    /* Sender den valgte historie tilbage til den kanal, hvor brug
-                    brugeren skrev !spooky. */
-                    interaction.reply(randomStory);
-                } else {
-                    /* Hvis der ikke findes data i den ønskede del af databasen, 
-                    sendes en fejlmeddelelse til kanalen. */
-                    interaction.reply('Ingen historier fundet.');
-                }
-            })
-            .catch((error) => {
-                /* Hvis der opstår en fejl under hentning af data fra databasen, 
-                sendes en fejlmeddelelse til kanalen. */
-                console.error('Fejl ved hentning fra Firebase:', error);
-                interaction.reply('Der opstod en fejl ved hentning af historier.');
-            });
-        } else {
-            // Brugeren er i en voice-kanal → afspil lyd
+            sendRandomStory(interaction);
+            return;
+        }
 
-            // Find alle mp3-filer i audio-mappen
-            const audioDir = path.join(__dirname, 'audio');
-            const soundFiles = fs.readdirSync(audioDir).filter(file => file.endsWith('.mp3'));
+        // Brugeren er i en voice-kanal → afspil lyd
 
-            if (soundFiles.length === 0) {
-                interaction.reply('Der blev ikke fundet nogen lydfiler!');
-                return;
-            }
+        // Find alle mp3-filer i audio-mappen
+        const audioDir = path.join(__dirname, 'audio');
+        const soundFiles = fs.readdirSync(audioDir).filter(file => file.endsWith('.mp3'));
 
-            // Vælg tilfældig lydfil
-            const randomSound = soundFiles[Math.floor(Math.random() * soundFiles.length)];
-            const soundPath = path.join(audioDir, randomSound);
+        // Hvis der ikke findes nogen lydfiler → send fejlbesked
+        if (soundFiles.length === 0) {
+            interaction.reply('Der blev ikke fundet nogen lydfiler!');
+            return;
+        }
 
-            // Sender midlertidigt svar til Discord, så "Applikationen svarede ikke" undgåes
-            interaction.deferReply({ flags: 1 << 6 }) // 1 << 6 svarer til "Ephemeral"
-            .then(() => {
-                // Sletter svaret igen så brugeren intet ser
-                interaction.deleteReply();
-            })
+        // Vælg tilfældig lydfil
+        const randomSound = soundFiles[Math.floor(Math.random() * soundFiles.length)];
+        const soundPath = path.join(audioDir, randomSound);
+
+        /*  Svarer midlertidigt og sletter det igen (så brugeren ikke ser noget).
+        Så "Applikationen svarede ikke" undgåes. */
+        interaction.deferReply({ flags: 1 << 6 }) // 1 << 6 svarer til "Ephemeral"
+        .then(() => {
+            // Sletter svaret igen så brugeren intet ser
+            interaction.deleteReply();
+        })
+        .catch(console.error);
+
+        // Join voice-kanalen
+        const connection = joinVoiceChannel({
+            channelId: voiceChannel.id,
+            guildId: voiceChannel.guild.id,
+            adapterCreator: voiceChannel.guild.voiceAdapterCreator,
+        });
+
+        // Opret audio player og resource samt afspiller lyden
+        const player = createAudioPlayer();
+        const resource = createAudioResource(soundPath);
+        player.play(resource);
+        connection.subscribe(player);
+
+        // Når lyden er færdig, forlad voice-kanalen
+        player.on('idle', () => {
+            connection.destroy();
+        });
+        
+        // Logger fejl hvis afspilning fejler
+        player.on('error', error => {
+            console.error('Fejl under afspilning:', error);
+            interaction.reply('Der opstod en fejl under afspilning af lyden.');
+            connection.destroy();
+        });
+    }
+
+    // 📜 /story – sender altid en historie, uanset om man er i voice eller ej
+    if (interaction.commandName === 'story') {
+        sendRandomStory(interaction);
+    }
+
+    // ℹ️ /about – sender info om hvad botten kan
+    if (interaction.commandName === 'about') {
+        interaction.reply({
+            content: `👻 Jeg er SpookyBot – din uhyggelige assistent til mørke aftener og Halloween-stemning!
+            
+🔊 Brug /spooky for at få en uhyggelig historie... eller høre en creepy lyd, hvis du er i en voice-kanal.
+
+📜 Brug /story for at få en tilfældig gyserhistorie direkte i chatten.
+
+🎧 Brug /choose-sound for selv at vælge, hvilken lyd der skal give dig kuldegysninger.
+
+🔮 Jeg er her for at skræmme dig på den hyggelige måde!`,
+            flags: 1 << 6
+        });
+    }
+
+    // 🔊 /choose-sound – afspiller en bestemt lyd valgt af brugeren
+    if (interaction.commandName === 'choose-sound') {
+        const member = interaction.member;
+        const voiceChannel = member.voice?.channel;
+
+        // Hvis brugeren ikke er i en voice-kanal
+        if (!voiceChannel) {
+            interaction.reply('Du skal være i en voice-kanal for at bruge denne kommando!');
+            return;
+        }
+
+        const chosenFile = interaction.options.getString('lyd');
+        const soundPath = path.join(__dirname, 'audio', chosenFile);
+
+        // Tjekker om lydfilen eksisterer
+        if (!fs.existsSync(soundPath)) {
+            interaction.reply('Den valgte lyd kunne ikke findes!');
+            return;
+        }
+
+        // Midlertidigt svar der slettes igen
+        interaction.deferReply({ flags: 1 << 6 })
+            .then(() => interaction.deleteReply())
             .catch(console.error);
 
-            // Join voice-kanalen
-            const connection = joinVoiceChannel({
-                channelId: voiceChannel.id,
-                guildId: voiceChannel.guild.id,
-                adapterCreator: voiceChannel.guild.voiceAdapterCreator,
-            });
+        // Joiner voice-kanalen og afspiller lyden
+        const connection = joinVoiceChannel({
+            channelId: voiceChannel.id,
+            guildId: voiceChannel.guild.id,
+            adapterCreator: voiceChannel.guild.voiceAdapterCreator,
+        });
 
-            // Opret audio player og resource
-            const player = createAudioPlayer();
-            const resource = createAudioResource(soundPath);
-            player.play(resource);
-            connection.subscribe(player);
+        const player = createAudioPlayer();
+        const resource = createAudioResource(soundPath);
+        player.play(resource);
+        connection.subscribe(player);
 
-            // Når lyden er færdig, forlad voice-kanalen
-            player.on('idle', () => {
-                connection.destroy();
-            });
-            
-            player.on('error', error => {
-                console.error('Fejl under afspilning:', error);
-                interaction.reply('Der opstod en fejl under afspilning af lyden.');
-                connection.destroy();
-            });
-        }
+        player.on('idle', () => {
+            connection.destroy();
+        });
+
+        player.on('error', error => {
+            console.error('Fejl under afspilning:', error);
+            connection.destroy();
+        });
     }
 });
