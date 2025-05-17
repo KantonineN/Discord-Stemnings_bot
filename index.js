@@ -1,8 +1,13 @@
 const {Client, GatewayIntentBits } = require('discord.js');
-const { joinVoiceChannel, createAudioPlayer, createAudioResource } = require('@discordjs/voice');
-const { db, ref, get, child } = require('./firebase');
-const fs = require('fs');
-const path = require('path');
+
+// Henter hjælpefunktioner (lyde, Firebase, svar mv.)
+const {
+    getVoiceChannel,
+    getSeasonAudioPath,
+    handleAudioCommand,
+    sendRandomStory,
+    autoVoiceSounds
+} = require('./helpers');
 
 /* dotenv er en pakke, der kan gemme miljøvariabler i en .env-fil, så man kan beskytte 
 følsomme oplysninger som Discord bot token, API-nøgler eller databladresser. */
@@ -32,42 +37,32 @@ client.login(process.env.DISCORD_TOKEN);
 /* Venter på, at ready-eventen udløses, hvilket betyder, at botten er 
 færdig med at logge ind og er klar til brug. Køres én gang. */
 client.once('ready', () => {
-    console.log('spooky er online!');
+    console.log('Bot er online!');
 });
 
-/* Funktion der henter og sender en tilfældig historie fra databasen */
-function sendRandomStory(interaction) {
-    /* Henter data fra Firebase-databasen. 
-    child() bruges til at navigere til en bestemt del af databasen. */
-    const dbRef = ref(db);
-    get(child(dbRef, 'stories'))
-        .then((snapshot) => {
-            if (snapshot.exists()) {
-                const stories = snapshot.val();
-                const randomStory = stories[Math.floor(Math.random() * stories.length)];
-                interaction.reply(randomStory);
-            } else {
-                interaction.reply('Ingen historier fundet.');
-            }
-        })
-        .catch((error) => {
-            /* Hvis der opstår en fejl under hentning af data fra databasen, 
-                sendes en fejlmeddelelse til kanalen. */
-            console.error('Fejl ved hentning fra Firebase:', error);
-            interaction.reply('Der opstod en fejl ved hentning af historier.');
-        });
-}
+/*  Event der lytter efter beskeder. Hvis er bliver skrevet i en kanal
+er der en chance for at botten sender en tilfældig historie. */
+client.on('messageCreate', (message) => {
+    if (message.author.bot) return;
+
+    // 10 % chance for at sende en historie, når nogen skriver noget
+    if (Math.random() < 0.1) {
+        sendRandomStory(message);
+    }
+});
+
 
 /* Denne event lytter efter slash commands, 
    og kører hver gang en bruger interagerer med en kommando. */
 client.on('interactionCreate', (interaction) => {
     if (!interaction.isChatInputCommand()) return;
 
+    const { commandName } = interaction;
 
-    // 🎃 /spooky – spiller lyd hvis i voice, ellers sender historie
-    if (interaction.commandName === 'spooky') {
-        const member = interaction.member;
-        const voiceChannel = member.voice?.channel;
+    // /event – spiller lyd hvis i voice, ellers sender historie
+    if (commandName === 'event') {
+        // Henter den voice-kanal brugeren er i
+        const voiceChannel = getVoiceChannel(interaction);
 
         // Brugeren er IKKE i en voice-kanal → send teksthistorie
         if (!voiceChannel) {
@@ -75,82 +70,34 @@ client.on('interactionCreate', (interaction) => {
             return;
         }
 
-        // Brugeren er i en voice-kanal → afspil lyd
-
-        // Find alle mp3-filer i audio-mappen
-        const audioDir = path.join(__dirname, 'audio');
-        const soundFiles = fs.readdirSync(audioDir).filter(file => file.endsWith('.mp3'));
-
-        // Hvis der ikke findes nogen lydfiler → send fejlbesked
-        if (soundFiles.length === 0) {
-            interaction.reply('Der blev ikke fundet nogen lydfiler!');
-            return;
-        }
-
-        // Vælg tilfældig lydfil
-        const randomSound = soundFiles[Math.floor(Math.random() * soundFiles.length)];
-        const soundPath = path.join(audioDir, randomSound);
-
-        /*  Svarer midlertidigt og sletter det igen (så brugeren ikke ser noget).
-        Så "Applikationen svarede ikke" undgåes. */
-        interaction.deferReply({ flags: 1 << 6 }) // 1 << 6 svarer til "Ephemeral"
-        .then(() => {
-            // Sletter svaret igen så brugeren intet ser
-            interaction.deleteReply();
-        })
-        .catch(console.error);
-
-        // Join voice-kanalen
-        const connection = joinVoiceChannel({
-            channelId: voiceChannel.id,
-            guildId: voiceChannel.guild.id,
-            adapterCreator: voiceChannel.guild.voiceAdapterCreator,
-        });
-
-        // Opret audio player og resource samt afspiller lyden
-        const player = createAudioPlayer();
-        const resource = createAudioResource(soundPath);
-        player.play(resource);
-        connection.subscribe(player);
-
-        // Når lyden er færdig, forlad voice-kanalen
-        player.on('idle', () => {
-            connection.destroy();
-        });
-        
-        // Logger fejl hvis afspilning fejler
-        player.on('error', error => {
-            console.error('Fejl under afspilning:', error);
-            interaction.reply('Der opstod en fejl under afspilning af lyden.');
-            connection.destroy();
-        });
+        // Brugeren er i en voice-kanal → afspil tilfældig sæson lyd
+        handleAudioCommand(interaction, voiceChannel);
     }
 
-    // 📜 /story – sender altid en historie, uanset om man er i voice eller ej
-    if (interaction.commandName === 'story') {
+    // /story – sender altid en historie, uanset om man er i voice eller ej
+    else if (commandName === 'story') {
         sendRandomStory(interaction);
     }
 
-    // ℹ️ /about – sender info om hvad botten kan
-    if (interaction.commandName === 'about') {
+    // ℹ/about – sender info om hvad botten kan
+    else if (commandName === 'about') {
         interaction.reply({
-            content: `👻 Jeg er SpookyBot – din uhyggelige assistent til mørke aftener og Halloween-stemning!
-            
-🔊 Brug /spooky for at få en uhyggelig historie... eller høre en creepy lyd, hvis du er i en voice-kanal.
+            content: `🕰️ Jeg er en stemningsbot, der bringer årstiden til live med lyd og fortællinger.
 
-📜 Brug /story for at få en tilfældig gyserhistorie direkte i chatten.
+📜 Brug /story for at få en fortælling, der passer til årstiden eller højtiden – fx vinter, forår, jul eller påske.
 
-🎧 Brug /choose-sound for selv at vælge, hvilken lyd der skal give dig kuldegysninger.
+🔊 Brug /event for at høre en sæsonbaseret lyd, hvis du er i en voice-kanal – ellers får du en fortælling i chatten.
 
-🔮 Jeg er her for at skræmme dig på den hyggelige måde!`,
+🎧 Brug /choose-sound for selv at vælge en lyd fra den aktuelle årstid.
+
+🍂 Uanset om det er sensommer, juletid eller forårssol, er jeg klar med indhold, der matcher stemningen.`,
             flags: 1 << 6
         });
     }
 
-    // 🔊 /choose-sound – afspiller en bestemt lyd valgt af brugeren
-    if (interaction.commandName === 'choose-sound') {
-        const member = interaction.member;
-        const voiceChannel = member.voice?.channel;
+    // /choose-sound – afspiller en bestemt lyd valgt af brugeren
+    else if (interaction.commandName === 'choose-sound') {
+        const voiceChannel = getVoiceChannel(interaction);
 
         // Hvis brugeren ikke er i en voice-kanal
         if (!voiceChannel) {
@@ -159,38 +106,19 @@ client.on('interactionCreate', (interaction) => {
         }
 
         const chosenFile = interaction.options.getString('lyd');
-        const soundPath = path.join(__dirname, 'audio', chosenFile);
+
+        // Mappen for den aktuelle årstid/højtid
+        const seasonalDir = getSeasonAudioPath();
+        const soundPath = path.join(seasonalDir, chosenFile);
 
         // Tjekker om lydfilen eksisterer
-        if (!fs.existsSync(soundPath)) {
+        if (!!require('fs').existsSync(soundPath)) {
             interaction.reply('Den valgte lyd kunne ikke findes!');
             return;
         }
 
-        // Midlertidigt svar der slettes igen
-        interaction.deferReply({ flags: 1 << 6 })
-            .then(() => interaction.deleteReply())
-            .catch(console.error);
-
-        // Joiner voice-kanalen og afspiller lyden
-        const connection = joinVoiceChannel({
-            channelId: voiceChannel.id,
-            guildId: voiceChannel.guild.id,
-            adapterCreator: voiceChannel.guild.voiceAdapterCreator,
-        });
-
-        const player = createAudioPlayer();
-        const resource = createAudioResource(soundPath);
-        player.play(resource);
-        connection.subscribe(player);
-
-        player.on('idle', () => {
-            connection.destroy();
-        });
-
-        player.on('error', error => {
-            console.error('Fejl under afspilning:', error);
-            connection.destroy();
-        });
+        handleAudioCommand(interaction, voiceChannel, soundPath);
     }
 });
+
+autoVoiceSounds(client);
