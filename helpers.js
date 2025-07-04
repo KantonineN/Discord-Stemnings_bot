@@ -59,14 +59,6 @@ function playSoundInVoice(voiceChannel, soundPath) {
     });
 }
 
-/*  Svarer midlertidigt og sletter det igen (så brugeren ikke ser noget).
-    Så "Applikationen svarede ikke" undgåes. */
-function deferAndDelete(interaction) {
-    return interaction.deferReply({ flags: 1 << 6 })
-    .then(() => interaction.deleteReply())
-    .catch(console.error);
-}
-
 /* Henter og sender en passende historie baseret på sæson/højtid – fallback til 'standard' */
 function sendRandomStory(target) {
     const season = getSeasonOrHoliday(); // Bestem sæson/højtid
@@ -105,17 +97,21 @@ function sendRandomStory(target) {
 }
 
 // Håndterer slash commands, der skal afspille lyd
-function handleAudioCommand(interaction, voiceChannel, soundPath = null) {
+async function handleAudioCommand(interaction, voiceChannel, soundPath = null) {
     if (!soundPath) {
         soundPath = getRandomSoundPath();
         if (!soundPath) {
-            interaction.reply('Der blev ikke fundet nogen passende lydfiler!');
+            await interaction.reply('Der blev ikke fundet nogen passende lydfiler!');
             return;
         }
     }
 
     // Midlertidigt skjult svar, så Discord ikke tror botten er død
-    deferAndDelete(interaction);
+    // deferAndDelete(interaction);
+
+    await interaction.deferReply({ ephemeral: true });
+    await interaction.deleteReply();
+
     // Afspil lyden i brugerens voice-kanal
     playSoundInVoice(voiceChannel, soundPath);
 }
@@ -166,7 +162,6 @@ module.exports = {
     getRandomSoundPath,
     getVoiceChannel,
     playSoundInVoice,
-    deferAndDelete,
     sendRandomStory,
     handleAudioCommand,
     autoVoiceSounds
