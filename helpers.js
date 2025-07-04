@@ -70,15 +70,16 @@ function deferAndDelete(interaction) {
 /* Henter og sender en passende historie baseret på sæson/højtid – fallback til 'standard' */
 function sendRandomStory(target) {
     const season = getSeasonOrHoliday(); // Bestem sæson/højtid
-    /* Henter data fra Firebase-databasen. 
-    child() bruges til at navigere til en bestemt del af databasen. */
+    // Henter data fra Firebase-databasen.
     const dbRef = db.ref(season);
 
+    // Henter data fra den relevante sti i databasen
     dbRef.once('value')
-    /* Når data er hentet, tjekker vi om der findes historier til den aktuelle sæson. */
+    // Når data er hentet, tjekker vi om der findes historier til den aktuelle sæson.
     .then((snapshot) => {
         // Hvis der findes historier til sæsonen
         if (snapshot.exists()) {
+            // Henter det faktiske array af historier
             const stories = snapshot.val();
             const story = stories[Math.floor(Math.random() * stories.length)];
             target.reply(story);

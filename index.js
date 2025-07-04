@@ -88,7 +88,7 @@ client.on('interactionCreate', (interaction) => {
 
 🔊 Brug /event for at høre en sæsonbaseret lyd, hvis du er i en voice-kanal – ellers får du en fortælling i chatten.
 
-🎧 Brug /choose-sound for selv at vælge en lyd fra den aktuelle årstid.
+🎧 Brug /choose-sound for selv at vælge en lyd fra den aktuelle årstid (virker kun hvis du er i en voice-kanal).
 
 🍂 Uanset om det er sensommer, juletid eller forårssol, er jeg klar med indhold, der matcher stemningen.`,
             flags: 1 << 6

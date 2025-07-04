@@ -23,7 +23,7 @@ function getSeasonOrHoliday(date = new Date()) {
     if ([6, 7, 8].includes(month)) return 'summer';
 
     // 🍂 Efterår: September (og evt. som fallback)
-    if (month === 9) return 'fall';
+    if (month === 9) return 'autumn';
 
     // Hvis ingen af ovenstående matcher, brug "standard"
     return 'standard';

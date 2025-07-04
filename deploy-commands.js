@@ -88,7 +88,7 @@ const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
 
 /* Routes.applicationCommands(...) bruges til at registrere globale commands.
 body: commands sender de definerede kommandoer til Discord. */
-rest.put(Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.GUILD_ID),
+rest.put(Routes.applicationCommands(process.env.CLIENT_ID),
 { body: jsonCommands })
 .then(() => console.log('✅ Slash command registreret.'))
 .catch(console.error);
